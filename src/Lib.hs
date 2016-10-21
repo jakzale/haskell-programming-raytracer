@@ -34,6 +34,8 @@ data Pixel = Pixel { r :: Word8
 black :: Pixel
 black =  Pixel 0 0 0
 
+defaultWidth = 500
+defaultHeight = 500
 
 data Image = Image { width :: Int
                    , height :: Int
@@ -42,7 +44,7 @@ data Image = Image { width :: Int
 
 
 defaultImage :: Image
-defaultImage = Image 200 100 (\_ _ -> black)
+defaultImage = Image defaultWidth defaultHeight (\_ _ -> black)
 
 newtype Generated = MkGenerated L.ByteString
 
@@ -85,8 +87,8 @@ resample c d a b x = (offset * stretch) + c
     stretch = (d - c) / (b - a)
 
 toColor = resample 0 255
-toWidth = toColor 0 199
-toHeight = toColor 0 99
+toWidth = toColor 0 $ fromIntegral (defaultWidth - 1)
+toHeight = toColor 0 $ fromIntegral(defaultHeight - 1)
 
 example x y = add redChannel blueChannel
   where
@@ -97,16 +99,22 @@ example x y = add redChannel blueChannel
     
 toIntensity = toColor 0 32
 
-mandelX = resample (-2) 1 0 199
-mandelY = resample (-1.5) 1.5 0 99
+mandelX = resample (-2) 1 0 $ fromIntegral (defaultWidth - 1)
+mandelY = resample (-1.5) 1.5 0 $ fromIntegral (defaultHeight - 1)
 
 mandelbrot :: Int -> Int -> Pixel
-mandelbrot x y = go (0 :+ 0) 0
+mandelbrot x y = grayscale $ 255 * mand x' y' `div` 32
   where
-    go z n | realPart (abs z) < 2 || n >= 32 = grayscale $ round $ toIntensity n
-           | otherwise = go (z^2 + (x' :+ y')) (n + 1)
-
-    x' :: Float
     x' = mandelX $ fromIntegral x
     y' = mandelY $ fromIntegral y
+
+
+mand :: Float -> Float -> Int
+mand x y = go z0  0
+ where
+   z0 = 0 :+ 0
+   c  = x :+ y
+   go z n | n > 32 = 32
+          | magnitude z > 2 = n
+          | otherwise = go ((z^2) + c) (n + 1)
 
