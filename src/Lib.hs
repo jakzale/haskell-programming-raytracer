@@ -31,8 +31,9 @@ data Pixel = Pixel { r :: Word8
                    }
              deriving (Show)
 
-blank :: Pixel
-blank = Pixel 0 0 0
+black :: Pixel
+black =  Pixel 0 0 0
+
 
 data Image = Image { width :: Int
                    , height :: Int
@@ -41,7 +42,7 @@ data Image = Image { width :: Int
 
 
 defaultImage :: Image
-defaultImage = Image 200 100 (\_ _ -> blank)
+defaultImage = Image 200 100 (\_ _ -> black)
 
 newtype Generated = MkGenerated L.ByteString
 
@@ -50,6 +51,9 @@ write p (MkGenerated i) = L.writeFile p i
 
 generate :: Image -> Generated
 generate (Image h w g) = MkGenerated $ toLazyByteString $ header h w <> generate' h w g
+
+quick :: FilePath -> (Int -> Int -> Pixel) -> IO ()
+quick p g = write p $ generate (defaultImage {gen = g})
 
 header :: Int -> Int -> Builder
 header w h = byteString "P6" <> space
@@ -62,30 +66,47 @@ generate' :: Int -> Int -> (Int -> Int -> Pixel) -> Builder
 generate' w h f | w <= 0 || h <= 0 = error "wrong dimensions"
                | otherwise = mconcat [enc (f x y)|y <- [0..(h - 1)], x <- [0..(w - 1)]]
 
-red = blank { r = 255}
+-- Define a dsl working on images
 
-redGen :: Int -> Int -> Pixel
-redGen _ _ = red
+grayscale :: Int -> Pixel
+grayscale i = Pixel a a a
+  where a = fromIntegral i
 
-  
-example :: Int -> Int -> Pixel
-example x y = blank {r = r, b = b}
+-- lets define that funny image
+add :: Pixel -> Pixel -> Pixel
+add (Pixel a b c) (Pixel x y z) = Pixel (a+x) (b+y) (c+z)
+
+-- Resample from x from a..b to c..d
+
+resample c d a b x = (offset * stretch) + c
   where
-    r = fromIntegral $ ((x + 1) * 255 `div` 200)
-    b = fromIntegral $ ((y + 1) * 255 `div` 100)
+    offset :: Float
+    offset = x - a
+    stretch = (d - c) / (b - a)
 
-genPixel :: Int -> Pixel
-genPixel n = Pixel a a a
-  where a = fromIntegral $ n * 256 `div` 32
+toColor = resample 0 255
+toWidth = toColor 0 199
+toHeight = toColor 0 99
 
-mandelbrot' :: Int -> Int -> Int -> (Complex Float) -> Pixel
-mandelbrot' x y n z | n > 32 = genPixel 32
-                    | (realPart (abs z)) > 2 = genPixel n
-                    | otherwise = mandelbrot' x y (n + 1) (z * z + (x' :+ y'))
-                    where
-                      x' = fromIntegral x
-                      y' = fromIntegral y
+example x y = add redChannel blueChannel
+  where
+    redChannel = Pixel x' 0 0
+    blueChannel = Pixel 0 0 y'
+    x' = (round . toWidth . fromIntegral) x
+    y' = (round . toWidth . fromIntegral) y
+    
+toIntensity = toColor 0 32
+
+mandelX = resample (-2) 1 0 199
+mandelY = resample (-1.5) 1.5 0 99
 
 mandelbrot :: Int -> Int -> Pixel
-mandelbrot x y = mandelbrot' x y 0 (0 :+ 0)
+mandelbrot x y = go (0 :+ 0) 0
+  where
+    go z n | realPart (abs z) < 2 || n >= 32 = grayscale $ round $ toIntensity n
+           | otherwise = go (z^2 + (x' :+ y')) (n + 1)
+
+    x' :: Float
+    x' = mandelX $ fromIntegral x
+    y' = mandelY $ fromIntegral y
 
