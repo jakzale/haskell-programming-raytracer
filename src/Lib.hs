@@ -9,6 +9,18 @@ import Data.Complex
 
 import Data.Monoid
 -- sample image
+class Encodeable a where
+  enc :: a -> Builder
+
+instance Encodeable Int where
+  enc n = lazyByteString $ C.pack (show n)
+
+instance Encodeable Word8 where
+  enc = word8
+
+instance Encodeable Pixel where
+  enc p = enc (r p) <> enc (g p) <> enc (b p)
+
 
 space :: Builder
 space = byteString "\n"
@@ -22,17 +34,22 @@ data Pixel = Pixel { r :: Word8
 blank :: Pixel
 blank = Pixel 0 0 0
 
-class Encodeable a where
-  enc :: a -> Builder
+data Image = Image { width :: Int
+                   , height :: Int
+                   , gen    :: Int -> Int -> Pixel
+                   }
 
-instance Encodeable Int where
-  enc n = lazyByteString $ C.pack (show n)
 
-instance Encodeable Word8 where
-  enc = word8
+defaultImage :: Image
+defaultImage = Image 200 100 (\_ _ -> blank)
 
-instance Encodeable Pixel where
-  enc p = enc (r p) <> enc (g p) <> enc (b p)
+newtype Generated = MkGenerated L.ByteString
+
+write :: FilePath -> Generated -> IO ()
+write p (MkGenerated i) = L.writeFile p i
+
+generate :: Image -> Generated
+generate (Image h w g) = MkGenerated $ toLazyByteString $ header h w <> generate' h w g
 
 header :: Int -> Int -> Builder
 header w h = byteString "P6" <> space
@@ -40,11 +57,9 @@ header w h = byteString "P6" <> space
               <> enc h <> space
               <> enc (255 :: Int) <> space
 
-fill :: Int -> Int -> Pixel -> Builder
-fill w h p = mconcat (replicate (w * h) (enc p))
 
-generate :: Int -> Int -> (Int -> Int -> Pixel) -> Builder
-generate w h f | w <= 0 || h <= 0 = error "wrong dimensions"
+generate' :: Int -> Int -> (Int -> Int -> Pixel) -> Builder
+generate' w h f | w <= 0 || h <= 0 = error "wrong dimensions"
                | otherwise = mconcat [enc (f x y)|y <- [0..(h - 1)], x <- [0..(w - 1)]]
 
 red = blank { r = 255}
@@ -52,15 +67,7 @@ red = blank { r = 255}
 redGen :: Int -> Int -> Pixel
 redGen _ _ = red
 
-genImage :: Int -> Int -> (Int -> Int -> Pixel) -> L.ByteString
-genImage w h f = toLazyByteString (header w h <> generate w h f)
   
-sampleBImage :: L.ByteString
-sampleBImage = genImage 200 100 redGen
-
-main :: IO ()
-main = magic 200 100 mandelbrot
-
 example :: Int -> Int -> Pixel
 example x y = blank {r = r, b = b}
   where
@@ -82,7 +89,3 @@ mandelbrot' x y n z | n > 32 = genPixel 32
 mandelbrot :: Int -> Int -> Pixel
 mandelbrot x y = mandelbrot' x y 0 (0 :+ 0)
 
-magic :: Int -> Int -> (Int -> Int -> Pixel) -> IO ()
-magic w h f = do
-  let image = genImage w h f
-  L.writeFile "output/mandelbrot.ppm" image
