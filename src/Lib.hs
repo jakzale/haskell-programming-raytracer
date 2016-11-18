@@ -5,116 +5,118 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as C
 import Data.ByteString.Builder
 import Data.Word
-import Data.Complex
-
 import Data.Monoid
 -- sample image
-class Encodeable a where
-  enc :: a -> Builder
 
-instance Encodeable Int where
-  enc n = lazyByteString $ C.pack (show n)
+import Prelude hiding (const)
 
-instance Encodeable Word8 where
-  enc = word8
-
-instance Encodeable Pixel where
-  enc p = enc (r p) <> enc (g p) <> enc (b p)
-
-
-space :: Builder
-space = byteString "\n"
-
-data Pixel = Pixel { r :: Word8
-                   , g :: Word8
-                   , b :: Word8
+data Pixel = Pixel { _r :: Word8
+                   , _g :: Word8
+                   , _b :: Word8
                    }
              deriving (Show)
 
-black :: Pixel
-black =  Pixel 0 0 0
+black = Pixel 0 0 0
+red   = Pixel 255 0 0
+-- Bitmap
 
-defaultWidth = 500
-defaultHeight = 500
+type Bitmap = Builder
 
-data Image = Image { width :: Int
-                   , height :: Int
-                   , gen    :: Int -> Int -> Pixel
-                   }
+space = byteString "\n"
+const = byteString
 
+int :: Int -> Bitmap
+int = lazyByteString . C.pack . show
 
-defaultImage :: Image
-defaultImage = Image defaultWidth defaultHeight (\_ _ -> black)
+infixr 6 <|>
+(<|>) :: Bitmap -> Bitmap -> Bitmap
+a <|> b = a <> space <> b
 
-newtype Generated = MkGenerated L.ByteString
+-- convert a pixel to bitmap
+rastPixel (Pixel r g b) = word8 r <> word8 g <> word8 b
+-- convert a list of pixels to bitmap
+rastPixels l = foldr (<>) (lazyByteString L.empty) (map rastPixel l)
+-- header
+header x y = const "P6" <|>
+             int x <|>
+             int y <|>
+             int 255 <> space
 
-write :: FilePath -> Generated -> IO ()
-write p (MkGenerated i) = L.writeFile p i
+-- A Simple render function
+renderBlack :: Int -> Int -> Pixel
+renderBlack _ _ = black
 
-generate :: Image -> Generated
-generate (Image h w g) = MkGenerated $ toLazyByteString $ header h w <> generate' h w g
+renderRed :: Int -> Int -> Pixel
+renderRed _ _ = red
 
-quick :: FilePath -> (Int -> Int -> Pixel) -> IO ()
-quick p g = write p $ generate (defaultImage {gen = g})
+renderPixels :: Int -> Int -> (Int -> Int -> Pixel) -> [Pixel]
+renderPixels width height renderFun = [renderFun x y | y <- [0..(height-1)], x <- [0..(width-1)]]
 
-header :: Int -> Int -> Builder
-header w h = byteString "P6" <> space
-              <> enc w <> space
-              <> enc h <> space
-              <> enc (255 :: Int) <> space
-
-
-generate' :: Int -> Int -> (Int -> Int -> Pixel) -> Builder
-generate' w h f | w <= 0 || h <= 0 = error "wrong dimensions"
-               | otherwise = mconcat [enc (f x y)|y <- [0..(h - 1)], x <- [0..(w - 1)]]
-
--- Define a dsl working on images
-
-grayscale :: Int -> Pixel
-grayscale i = Pixel a a a
-  where a = fromIntegral i
-
--- lets define that funny image
-add :: Pixel -> Pixel -> Pixel
-add (Pixel a b c) (Pixel x y z) = Pixel (a+x) (b+y) (c+z)
-
--- Resample from x from a..b to c..d
-
-resample c d a b x = (offset * stretch) + c
+render :: Int -> Int -> (Int -> Int -> Pixel) -> Bitmap
+render width height renderFun = imageHeader <> imageBitmap
   where
-    offset :: Float
-    offset = x - a
-    stretch = (d - c) / (b - a)
+    imageHeader = header width height
+    imageBitmap = rastPixels (renderPixels width height renderFun)
 
-toColor = resample 0 255
-toWidth = toColor 0 $ fromIntegral (defaultWidth - 1)
-toHeight = toColor 0 $ fromIntegral(defaultHeight - 1)
+writeBitmap :: FilePath -> Bitmap -> IO ()
+writeBitmap file bitmap = L.writeFile file (toLazyByteString bitmap)
 
-example x y = add redChannel blueChannel
+data Sphere = Sphere {  sphereX :: Float
+                      , sphereY :: Float
+                      , sphereZ :: Float
+                      , sphereR :: Float
+                      , sphereC :: Pixel
+                      }
+
+baseSphere = Sphere 320 240 20 50 black
+
+data Vector = Vector { vectorX :: Float
+                     , vectorY :: Float
+                     , vectorZ :: Float
+                     }
+
+infixr <+>
+infixr <.>
+
+-- Vector addition
+(<+>) :: Vector -> Vector -> Vector
+a <+> b = Vector x y z
   where
-    redChannel = Pixel x' 0 0
-    blueChannel = Pixel 0 0 y'
-    x' = (round . toWidth . fromIntegral) x
-    y' = (round . toWidth . fromIntegral) y
-    
-toIntensity = toColor 0 32
+    x = vectorX a + vectorX b
+    y = vectorY a + vectorY b
+    z = vectorZ a + vectorZ b
 
-mandelX = resample (-2) 1 0 $ fromIntegral (defaultWidth - 1)
-mandelY = resample (-1.5) 1.5 0 $ fromIntegral (defaultHeight - 1)
-
-mandelbrot :: Int -> Int -> Pixel
-mandelbrot x y = grayscale $ 255 * mand x' y' `div` 32
+-- Dot product
+(<.>) :: Vector -> Vector -> Float
+a <.> b = axbx + ayby + azbz
   where
-    x' = mandelX $ fromIntegral x
-    y' = mandelY $ fromIntegral y
+    axbx = vectorX a * vectorX b
+    ayby = vectorY a * vectorY b
+    azbz = vectorZ a * vectorZ b
 
+len :: Vector -> Float
+len a = sqrt (a <.> a)
 
-mand :: Float -> Float -> Int
-mand x y = go z0  0
- where
-   z0 = 0 :+ 0
-   c  = x :+ y
-   go z n | n > 32 = 32
-          | magnitude z > 2 = n
-          | otherwise = go ((z^2) + c) (n + 1)
+dumb :: (Float -> Float -> a) -> Int -> Int -> a
+dumb f a b = f (fromIntegral a) (fromIntegral b)
 
+rayGen :: Float -> Float -> Vector
+rayGen x y = undefined
+
+renderSphere :: Sphere -> Int -> Int -> Pixel
+renderSphere s = dumb sphere
+  where
+    c = sphereC s
+    x = sphereX s
+    y = sphereY s
+    r = sphereR s
+    sphere :: Float -> Float -> Pixel
+    sphere x' y' | (x - x') ** 2 + (y - y') ** 2 < r ** 2 = c
+                 | otherwise = black    
+
+main :: IO ()
+main = do
+  let s = baseSphere {sphereC = red}
+  let renderFun = renderSphere s
+  let bitmap = render 640 480 renderFun
+  writeBitmap "output/foo.ppm" bitmap
