@@ -1,14 +1,14 @@
-name:                pc-raytracing
+name:                haskell-programming-raytracer
 version:             0.1.0.0
-synopsis:            Initial project template from stack
+synopsis:            A simple raytracer written in Haskell
 description:         Please see README.md
-homepage:            https://github.com/jakzale/pc-fractals#readme
+homepage:            https://github.com/jakzale/haskell-programming-raytracer#README
 license:             BSD3
 license-file:        LICENSE
 author:              Jakub Zalewski
 maintainer:          jakzale@gmail.com
 copyright:           Copyright: (c) 2016 Jakub Zalewski
-category:            Web
+category:            Graphics
 build-type:          Simple
 -- extra-source-files:
 cabal-version:       >=1.10
@@ -21,4 +21,4 @@ library
 
 source-repository head
   type:     git
-  location: https://github.com/jakzale/pc-fractals
+  location: https://github.com/jakzale/haskell-programming-raytracer
